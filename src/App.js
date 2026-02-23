@@ -5,30 +5,17 @@ import * as XLSX from "xlsx";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
 
-// ── Firebase Config ── À REMPLIR avec vos propres valeurs ────────────────────
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// ── Firebase Config ───────────────────────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyBsEt-68wKQ_koKP_LY8-nWfTrbAR5f8O0",
-  authDomain: "inovoice-app-7eebd.firebaseapp.com",
-  projectId: "inovoice-app-7eebd",
-  storageBucket: "inovoice-app-7eebd.firebasestorage.app",
+  apiKey:            "AIzaSyBsEt-68wKQ_koKP_LY8-nWfTrbAR5f8O0",
+  authDomain:        "inovoice-app-7eebd.firebaseapp.com",
+  projectId:         "inovoice-app-7eebd",
+  storageBucket:     "inovoice-app-7eebd.firebasestorage.app",
   messagingSenderId: "198858609486",
-  appId: "1:198858609486:web:8135e19250cad7aa79c41f",
-  measurementId: "G-860QL36VJ7"
+  appId:             "1:198858609486:web:8135e19250cad7aa79c41f",
 };
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-const fbApp = initializeApp(firebaseConfig);
-const db    = getFirestore(fbApp);
+const fbApp   = initializeApp(firebaseConfig);
+const db      = getFirestore(fbApp);
 const DATA_DOC = doc(db, "zkm_data", "main");
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -138,7 +125,7 @@ const DARK = "#1a1a2e";
 const DEFAULT_PROFILS = [
   {
     id: "p1",
-    nom: "Entreprise 1",
+    nom: "ZK MAROC",
     couleur: "#C8A84B",
     companyInfo: { nom: "ZK MAROC", adresse: "29 RUE MOHAMED EL BAAMRANI RES SARA 2 ETG 2 N° 206 CASABLANCA", rc: "703181", if_: "68812554", tp: "32302276", ice: "003842605000089", email: "zkmaroc@outlook.fr" },
     logoUrl: null,
@@ -178,21 +165,21 @@ function useStorage(key, init) {
 
   const fromFirestore = useRef(false);
 
-  // ── Écriture : localStorage + Firestore ──────────────────────────────────
+  // Écriture : localStorage + Firestore
   useEffect(() => {
     if (fromFirestore.current) { fromFirestore.current = false; return; }
     try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
     setDoc(DATA_DOC, { [key]: val }, { merge: true }).catch(() => {});
   }, [key, val]);
 
-  // ── Lecture temps réel depuis Firestore (tous appareils) ─────────────────
+  // Lecture temps réel depuis Firestore (tous appareils)
   useEffect(() => {
     const unsub = onSnapshot(DATA_DOC, (snap) => {
       if (!snap.exists()) return;
       const incoming = snap.data()[key];
       if (incoming === undefined) return;
       const local = localStorage.getItem(key);
-      if (JSON.stringify(incoming) === local) return; // pas de changement
+      if (JSON.stringify(incoming) === local) return;
       fromFirestore.current = true;
       setVal(incoming);
       try { localStorage.setItem(key, JSON.stringify(incoming)); } catch {}
@@ -2706,20 +2693,18 @@ export default function App() {
 
       try {
         const canvas = await html2canvas(el, {
-          scale: 4,
+          scale: 2,
           useCORS: true,
           allowTaint: true,
           backgroundColor: "#ffffff",
           width: 794,
           height: 1123,
           logging: false,
-          imageTimeout: 0,
-          removeContainer: true,
         });
 
-        const imgData = canvas.toDataURL("image/png");
-        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-        pdf.addImage(imgData, "PNG", 0, 0, 210, 297, "", "FAST");
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
+        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
 
         // Electron: sauvegarde directe via IPC (chemin complet persisté)
         const activeFolderPath = dlDirNames[profilActif?.id];
