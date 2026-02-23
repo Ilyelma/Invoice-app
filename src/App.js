@@ -3,7 +3,8 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import * as XLSX from "xlsx";
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+import { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, deleteDoc } from "firebase/firestore";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 
 // ── Firebase Config ───────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -16,7 +17,10 @@ const firebaseConfig = {
 };
 const fbApp   = initializeApp(firebaseConfig);
 const db      = getFirestore(fbApp);
+const auth    = getAuth(fbApp);
 const DATA_DOC = doc(db, "zkm_data", "main");
+// Collection Firestore pour les utilisateurs de l'app
+const USERS_COL = collection(db, "zkm_users");
 // ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -2617,8 +2621,472 @@ function CalculPage({ products, onCreateFacture }) {
   );
 }
 
+// ── Auth Context & Components ─────────────────────────────────────────────────
+
+// Page de connexion
+function LoginPage({ onLogin, error, loading }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+    onLogin(email.trim(), password);
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: "#1a1a2e",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "'Segoe UI', system-ui, sans-serif",
+    }}>
+      <style>{`
+        @keyframes fadeIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+        .login-input:focus { border-color: #C8A84B !important; box-shadow: 0 0 0 3px #C8A84B22; outline: none; }
+        .login-btn:hover { background: #b8943a !important; }
+      `}</style>
+
+      <div style={{
+        background: "#252540", borderRadius: 20, padding: "48px 40px",
+        width: "100%", maxWidth: 420, boxShadow: "0 24px 64px #00000088",
+        animation: "fadeIn .4s ease",
+      }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ fontSize: 44, marginBottom: 10 }}>⚡</div>
+          <div style={{ color: "#C8A84B", fontSize: 24, fontWeight: 800, letterSpacing: 1 }}>ZK MAROC</div>
+          <div style={{ color: "#8888bb", fontSize: 12, marginTop: 4, letterSpacing: 2, textTransform: "uppercase" }}>Invoice Manager</div>
+        </div>
+
+        <div style={{ color: "#ccccee", fontSize: 16, fontWeight: 700, marginBottom: 24, textAlign: "center" }}>
+          Connectez-vous à votre compte
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {/* Email */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#8888bb", fontWeight: 600, marginBottom: 7, textTransform: "uppercase", letterSpacing: 0.8 }}>
+              Adresse e-mail
+            </label>
+            <input
+              className="login-input"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="exemple@zkmaroc.com"
+              autoComplete="email"
+              style={{
+                width: "100%", padding: "12px 16px", background: "#1a1a2e",
+                border: "1.5px solid #3a3a5a", borderRadius: 10, color: "#fff",
+                fontSize: 14, boxSizing: "border-box", transition: "border .2s, box-shadow .2s",
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+
+          {/* Mot de passe */}
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#8888bb", fontWeight: 600, marginBottom: 7, textTransform: "uppercase", letterSpacing: 0.8 }}>
+              Mot de passe
+            </label>
+            <div style={{ position: "relative" }}>
+              <input
+                className="login-input"
+                type={showPwd ? "text" : "password"}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                style={{
+                  width: "100%", padding: "12px 44px 12px 16px", background: "#1a1a2e",
+                  border: "1.5px solid #3a3a5a", borderRadius: 10, color: "#fff",
+                  fontSize: 14, boxSizing: "border-box", transition: "border .2s, box-shadow .2s",
+                  fontFamily: "inherit",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPwd(p => !p)}
+                style={{
+                  position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "#6666aa", fontSize: 16, lineHeight: 1, padding: 4,
+                }}
+              >
+                {showPwd ? "🙈" : "👁️"}
+              </button>
+            </div>
+          </div>
+
+          {/* Erreur */}
+          {error && (
+            <div style={{
+              background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 10,
+              padding: "10px 14px", marginBottom: 16, color: "#991b1b", fontSize: 13, fontWeight: 600,
+            }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          {/* Bouton */}
+          <button
+            type="submit"
+            className="login-btn"
+            disabled={loading || !email || !password}
+            style={{
+              width: "100%", background: "#C8A84B", color: "#1a1a2e", border: "none",
+              borderRadius: 10, padding: "13px", fontSize: 15, fontWeight: 800,
+              cursor: loading || !email || !password ? "not-allowed" : "pointer",
+              opacity: loading || !email || !password ? 0.7 : 1,
+              transition: "background .2s", fontFamily: "inherit",
+            }}
+          >
+            {loading ? "Connexion..." : "Se connecter"}
+          </button>
+        </form>
+
+        <div style={{ textAlign: "center", marginTop: 24, color: "#555577", fontSize: 12 }}>
+          Accès réservé aux utilisateurs autorisés
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Panel de gestion des utilisateurs (Admin uniquement)
+function UsersPanel({ currentUser, onClose }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ email: "", password: "", role: "lecture", nom: "" });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const ROLES = [
+    { id: "admin",            label: "Administrateur",       desc: "Accès total + gestion des utilisateurs",  color: "#991b1b", bg: "#fee2e2", icon: "👑" },
+    { id: "ecriture_lecture", label: "Écriture & Lecture",   desc: "Peut créer, modifier, supprimer",          color: "#1e40af", bg: "#eff6ff", icon: "✏️" },
+    { id: "lecture",          label: "Lecture seule",        desc: "Visualisation uniquement, sans modification", color: "#065f46", bg: "#d1fae5", icon: "👁️" },
+  ];
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const snap = await getDocs(USERS_COL);
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setUsers(list.sort((a, b) => (a.email || "").localeCompare(b.email || "")));
+    } catch (e) {
+      console.error("Erreur chargement utilisateurs:", e);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadUsers(); }, []);
+
+  const createUser = async () => {
+    setCreateError("");
+    setCreateSuccess("");
+    if (!form.email.trim() || !form.password || form.password.length < 6) {
+      setCreateError("Email valide et mot de passe (6+ caractères) requis.");
+      return;
+    }
+    setCreating(true);
+    try {
+      // Créer dans Firebase Auth via l'API Admin (via callable function ou directement)
+      // On stocke dans Firestore les infos de rôle (l'UID sera l'email hashé en clé)
+      const userId = btoa(form.email.trim().toLowerCase()).replace(/[^a-zA-Z0-9]/g, "_");
+      await setDoc(doc(db, "zkm_users", userId), {
+        email: form.email.trim().toLowerCase(),
+        nom: form.nom.trim() || form.email.split("@")[0],
+        role: form.role,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser.email,
+        password: form.password, // stocké temporairement pour provisioning
+      });
+      setCreateSuccess("✅ Utilisateur créé avec succès !");
+      setForm({ email: "", password: "", role: "lecture", nom: "" });
+      setShowForm(false);
+      loadUsers();
+    } catch (e) {
+      setCreateError("Erreur : " + e.message);
+    }
+    setCreating(false);
+  };
+
+  const updateRole = async (userId, newRole) => {
+    try {
+      await setDoc(doc(db, "zkm_users", userId), { role: newRole }, { merge: true });
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    } catch (e) {
+      alert("Erreur lors de la mise à jour : " + e.message);
+    }
+  };
+
+  const deleteUser = async (userId, userEmail) => {
+    if (!window.confirm(`Supprimer l'accès de ${userEmail} ?`)) return;
+    if (userEmail === currentUser.email) { alert("Vous ne pouvez pas supprimer votre propre compte."); return; }
+    try {
+      await deleteDoc(doc(db, "zkm_users", userId));
+      setUsers(prev => prev.filter(u => u.id !== userId));
+    } catch (e) {
+      alert("Erreur : " + e.message);
+    }
+  };
+
+  const getRoleBadge = (role) => {
+    const r = ROLES.find(r => r.id === role) || ROLES[2];
+    return (
+      <span style={{ background: r.bg, color: r.color, border: "1px solid " + r.color + "40", borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>
+        {r.icon} {r.label}
+      </span>
+    );
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "#00000080", zIndex: 2000,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "'Segoe UI', system-ui, sans-serif",
+    }}>
+      <div style={{
+        background: "#fff", borderRadius: 20, width: "100%", maxWidth: 780,
+        maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 64px #00000050",
+      }}>
+        {/* Header */}
+        <div style={{ padding: "24px 28px 20px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ background: "#fee2e280", borderRadius: 10, padding: "8px 10px", fontSize: 20 }}>👥</div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#1a1a2e" }}>Gestion des utilisateurs</h2>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Créez et gérez les accès à l'application</div>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
+            <button
+              onClick={() => { setShowForm(p => !p); setCreateError(""); setCreateSuccess(""); }}
+              style={{ background: "#C8A84B", color: "#1a1a2e", border: "none", borderRadius: 10, padding: "9px 18px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+              {showForm ? "Annuler" : "+ Nouvel utilisateur"}
+            </button>
+            <button onClick={onClose}
+              style={{ background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 16px", cursor: "pointer", fontSize: 14 }}>
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+
+          {/* Formulaire création */}
+          {showForm && (
+            <div style={{ background: "#fffbeb", border: "1.5px solid #fde68a", borderRadius: 14, padding: "20px 24px", marginBottom: 20 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#92400e", marginBottom: 16 }}>➕ Créer un nouvel utilisateur</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 5, textTransform: "uppercase" }}>Nom affiché</label>
+                  <input value={form.nom} onChange={e => setForm(p => ({ ...p, nom: e.target.value }))}
+                    placeholder="Ex: Ahmed Bennani"
+                    style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #d1d5db", borderRadius: 9, fontSize: 13, boxSizing: "border-box", fontFamily: "inherit", outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 5, textTransform: "uppercase" }}>Adresse e-mail</label>
+                  <input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                    type="email" placeholder="utilisateur@zkmaroc.com"
+                    style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #d1d5db", borderRadius: 9, fontSize: 13, boxSizing: "border-box", fontFamily: "inherit", outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 5, textTransform: "uppercase" }}>Mot de passe</label>
+                  <input value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                    type="password" placeholder="Minimum 6 caractères"
+                    style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #d1d5db", borderRadius: 9, fontSize: 13, boxSizing: "border-box", fontFamily: "inherit", outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 5, textTransform: "uppercase" }}>Rôle</label>
+                  <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #d1d5db", borderRadius: 9, fontSize: 13, boxSizing: "border-box", fontFamily: "inherit", outline: "none", background: "#fff", cursor: "pointer" }}>
+                    {ROLES.map(r => <option key={r.id} value={r.id}>{r.icon} {r.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Description du rôle */}
+              {(() => { const r = ROLES.find(x => x.id === form.role); return r ? (
+                <div style={{ background: r.bg, border: "1px solid " + r.color + "30", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: r.color }}>
+                  {r.icon} <b>{r.label}</b> — {r.desc}
+                </div>
+              ) : null; })()}
+
+              {createError && <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 12px", marginBottom: 12, color: "#991b1b", fontSize: 12 }}>{createError}</div>}
+              {createSuccess && <div style={{ background: "#d1fae5", border: "1px solid #6ee7b7", borderRadius: 8, padding: "8px 12px", marginBottom: 12, color: "#065f46", fontSize: 12 }}>{createSuccess}</div>}
+
+              <button onClick={createUser} disabled={creating}
+                style={{ background: "#1a1a2e", color: "#C8A84B", border: "none", borderRadius: 10, padding: "10px 22px", cursor: creating ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 13, opacity: creating ? 0.7 : 1 }}>
+                {creating ? "Création..." : "✓ Créer l'utilisateur"}
+              </button>
+            </div>
+          )}
+
+          {/* Liste des rôles */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+            {ROLES.map(r => (
+              <div key={r.id} style={{ background: r.bg, border: "1px solid " + r.color + "30", borderRadius: 12, padding: "12px 16px" }}>
+                <div style={{ fontSize: 18, marginBottom: 4 }}>{r.icon}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: r.color }}>{r.label}</div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 3 }}>{r.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Table utilisateurs */}
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Chargement...</div>
+          ) : users.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>👤</div>
+              Aucun utilisateur créé pour l'instant.
+            </div>
+          ) : (
+            <div style={{ border: "1px solid #f0f0f0", borderRadius: 14, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#1a1a2e" }}>
+                    {["Utilisateur", "E-mail", "Rôle", "Créé le", "Actions"].map(h => (
+                      <th key={h} style={{ padding: "11px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#8888bb", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u, i) => (
+                    <tr key={u.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafaf8", borderBottom: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1a1a2e", fontSize: 14 }}>
+                        {u.nom || u.email?.split("@")[0]}
+                        {u.email === currentUser.email && <span style={{ marginLeft: 6, background: "#C8A84B20", color: "#C8A84B", borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>Vous</span>}
+                      </td>
+                      <td style={{ padding: "12px 16px", color: "#6b7280", fontSize: 13 }}>{u.email}</td>
+                      <td style={{ padding: "12px 16px" }}>
+                        {u.email === currentUser.email ? getRoleBadge(u.role) : (
+                          <select
+                            value={u.role}
+                            onChange={e => updateRole(u.id, e.target.value)}
+                            style={{ border: "1.5px solid #e5e7eb", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", outline: "none", background: "#fff" }}>
+                            {ROLES.map(r => <option key={r.id} value={r.id}>{r.icon} {r.label}</option>)}
+                          </select>
+                        )}
+                      </td>
+                      <td style={{ padding: "12px 16px", color: "#9ca3af", fontSize: 12 }}>
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString("fr-MA") : "—"}
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        {u.email !== currentUser.email && (
+                          <button onClick={() => deleteUser(u.id, u.email)}
+                            style={{ background: "#fee2e2", color: "#991b1b", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                            🗑️ Supprimer
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState("factures");
+
+  // ── Authentification ──────────────────────────────────────────────────────
+  const [authUser, setAuthUser]       = useState(null);   // Firebase Auth user
+  const [userRole, setUserRole]       = useState(null);   // "admin" | "ecriture_lecture" | "lecture"
+  const [userName, setUserName]       = useState("");     // Nom affiché
+  const [authReady, setAuthReady]     = useState(false);  // Firebase Auth initialisé
+  const [loginError, setLoginError]   = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [showUsersPanel, setShowUsersPanel] = useState(false);
+
+  // Écouter l'état de connexion Firebase
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setAuthUser(user);
+        // Chercher le rôle dans Firestore
+        try {
+          const userId = btoa(user.email.toLowerCase()).replace(/[^a-zA-Z0-9]/g, "_");
+          const snap = await getDocs(USERS_COL);
+          const found = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(u => u.email === user.email.toLowerCase());
+          if (found) {
+            setUserRole(found.role || "lecture");
+            setUserName(found.nom || user.email.split("@")[0]);
+          } else {
+            // Utilisateur Firebase mais sans fiche Firestore → lecture par défaut
+            setUserRole("lecture");
+            setUserName(user.email.split("@")[0]);
+          }
+        } catch {
+          setUserRole("lecture");
+          setUserName(user.email.split("@")[0]);
+        }
+      } else {
+        setAuthUser(null);
+        setUserRole(null);
+        setUserName("");
+      }
+      setAuthReady(true);
+    });
+    return unsub;
+  }, []);
+
+  const handleLogin = async (email, password) => {
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged s'occupera du reste
+    } catch (e) {
+      const msgs = {
+        "auth/user-not-found":  "Aucun compte trouvé avec cet e-mail.",
+        "auth/wrong-password":  "Mot de passe incorrect.",
+        "auth/invalid-email":   "Adresse e-mail invalide.",
+        "auth/too-many-requests": "Trop de tentatives. Réessayez plus tard.",
+        "auth/invalid-credential": "E-mail ou mot de passe incorrect.",
+      };
+      setLoginError(msgs[e.code] || "Erreur de connexion. Vérifiez vos identifiants.");
+    }
+    setLoginLoading(false);
+  };
+
+  const handleLogout = () => {
+    if (!window.confirm("Se déconnecter ?")) return;
+    signOut(auth);
+  };
+
+  // Helpers de permission
+  const canWrite = userRole === "admin" || userRole === "ecriture_lecture";
+  const isAdmin  = userRole === "admin";
+
+  // ── Écran de chargement Auth ──────────────────────────────────────────────
+  if (!authReady) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#1a1a2e", gap: 24 }}>
+        <style>{`@keyframes zkm-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(280%); } }`}</style>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>⚡</div>
+          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800 }}>ZK MAROC</div>
+        </div>
+        <div style={{ width: 240, height: 5, background: "#2a2a4a", borderRadius: 3, overflow: "hidden", position: "relative" }}>
+          <div style={{ width: "50%", height: "100%", background: "linear-gradient(90deg, transparent, #C8A84B, transparent)", borderRadius: 3, position: "absolute", animation: "zkm-slide 1.3s ease-in-out infinite" }} />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Page de connexion si non connecté ─────────────────────────────────────
+  if (!authUser) {
+    return <LoginPage onLogin={handleLogin} error={loginError} loading={loginLoading} />;
+  }
 
   // ── Chargement Firestore : on attend la 1ère réponse avant d'afficher l'app ──
   // Si localStorage a déjà des données → pas besoin d'attendre
@@ -3035,56 +3503,32 @@ export default function App() {
         justifyContent: "center", height: "100vh", background: "#1a1a2e", gap: 24,
       }}>
         <style>{`
-          @keyframes zkm-slide {
-            0%   { transform: translateX(-100%); }
-            100% { transform: translateX(280%); }
-          }
-          @keyframes zkm-pulse {
-            0%, 100% { opacity: 1; }
-            50%       { opacity: 0.5; }
-          }
+          @keyframes zkm-slide2 { 0% { transform: translateX(-100%); } 100% { transform: translateX(280%); } }
+          @keyframes zkm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         `}</style>
-
-        {/* Logo / titre */}
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 48, marginBottom: 8 }}>⚡</div>
-          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800, letterSpacing: 1 }}>
-            ZK MAROC
-          </div>
-          <div style={{ color: "#aaaacc", fontSize: 13, marginTop: 4, letterSpacing: 2, textTransform: "uppercase" }}>
-            Invoice Manager
-          </div>
+          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800, letterSpacing: 1 }}>ZK MAROC</div>
+          <div style={{ color: "#aaaacc", fontSize: 13, marginTop: 4, letterSpacing: 2, textTransform: "uppercase" }}>Invoice Manager</div>
         </div>
-
-        {/* Message */}
-        <div style={{
-          color: "#ccccee", fontSize: 15, fontWeight: 500,
-          animation: "zkm-pulse 1.6s ease-in-out infinite",
-        }}>
+        <div style={{ color: "#ccccee", fontSize: 15, fontWeight: 500, animation: "zkm-pulse 1.6s ease-in-out infinite" }}>
           Synchronisation en cours…
         </div>
-
-        {/* Barre de progression animée */}
-        <div style={{
-          width: 240, height: 5, background: "#2a2a4a",
-          borderRadius: 3, overflow: "hidden", position: "relative",
-        }}>
-          <div style={{
-            width: "50%", height: "100%", background: "linear-gradient(90deg, transparent, #C8A84B, transparent)",
-            borderRadius: 3, position: "absolute", top: 0, left: 0,
-            animation: "zkm-slide 1.3s ease-in-out infinite",
-          }} />
+        <div style={{ width: 240, height: 5, background: "#2a2a4a", borderRadius: 3, overflow: "hidden", position: "relative" }}>
+          <div style={{ width: "50%", height: "100%", background: "linear-gradient(90deg, transparent, #C8A84B, transparent)", borderRadius: 3, position: "absolute", top: 0, left: 0, animation: "zkm-slide2 1.3s ease-in-out infinite" }} />
         </div>
-
-        <div style={{ color: "#555577", fontSize: 12, marginTop: 4 }}>
-          Connexion à la base de données Firebase…
-        </div>
+        <div style={{ color: "#555577", fontSize: 12, marginTop: 4 }}>Connexion à la base de données Firebase…</div>
       </div>
     );
   }
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f5f4ef", minHeight: "100vh", display: "flex" }}>
+
+      {/* ── Panel utilisateurs (admin) ── */}
+      {showUsersPanel && (
+        <UsersPanel currentUser={authUser} onClose={() => setShowUsersPanel(false)} />
+      )}
 
       {/* ── Sidebar ── */}
       <div style={{ width: 240, background: DARK, minHeight: "100vh", position: "fixed", top: 0, left: 0, bottom: 0, display: "flex", flexDirection: "column", zIndex: 100 }}>
@@ -3134,6 +3578,45 @@ export default function App() {
         <div style={{ padding: "12px 16px", borderTop: "1px solid #ffffff10", fontSize: 11, color: "#3333aa" }}>
           {clients.length} clients · {products.length} produits
         </div>
+
+        {/* ── Utilisateur connecté ── */}
+        <div style={{ padding: "12px 16px", borderTop: "1px solid #ffffff10" }}>
+          {/* Badge rôle */}
+          {(() => {
+            const roleInfo = {
+              admin:            { label: "Administrateur", color: "#fcd34d", bg: "#92400e40", icon: "👑" },
+              ecriture_lecture: { label: "Écriture & Lecture", color: "#93c5fd", bg: "#1e40af40", icon: "✏️" },
+              lecture:          { label: "Lecture seule", color: "#6ee7b7", bg: "#065f4640", icon: "👁️" },
+            };
+            const r = roleInfo[userRole] || roleInfo.lecture;
+            return (
+              <div style={{ background: r.bg, border: "1px solid " + r.color + "40", borderRadius: 8, padding: "6px 10px", marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: r.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  {r.icon} {r.label}
+                </div>
+                <div style={{ fontSize: 11, color: "#ccccee", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {userName}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Bouton gestion utilisateurs (admin only) */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowUsersPanel(true)}
+              style={{ width: "100%", background: "#ffffff0a", border: "1px solid #ffffff15", borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: "#aaaacc", fontSize: 12, fontWeight: 600, marginBottom: 6, textAlign: "left", display: "flex", alignItems: "center", gap: 6 }}>
+              👥 Gérer les utilisateurs
+            </button>
+          )}
+
+          {/* Bouton déconnexion */}
+          <button
+            onClick={handleLogout}
+            style={{ width: "100%", background: "#fee2e210", border: "1px solid #991b1b30", borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: "#fca5a5", fontSize: 12, fontWeight: 600, textAlign: "left", display: "flex", alignItems: "center", gap: 6 }}>
+            🚪 Se déconnecter
+          </button>
+        </div>
       </div>
 
       {/* ── Content ── */}
@@ -3151,7 +3634,7 @@ export default function App() {
                   <span style={{ background: (profilActif?.couleur || GOLD) + "20", color: profilActif?.couleur || GOLD, border: "1px solid " + (profilActif?.couleur || GOLD) + "40", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>{profilActif?.nom}</span>
                 </div>
               </div>
-              <button style={BTN_PRIMARY} onClick={openNewFact}>+ Nouvelle Facture</button>
+              <button style={BTN_PRIMARY} onClick={openNewFact} disabled={!canWrite} title={!canWrite ? "Accès en lecture seule" : ""}>+ Nouvelle Facture</button>
             </div>
 
             {/* ── Cartes stats ── */}
@@ -3315,10 +3798,10 @@ export default function App() {
                             <td key="actions" style={TD}>
                               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                                 {/* Icône Edit */}
-                                <button title="Modifier" onClick={() => openEditFact(f)}
+                                {canWrite && <button title="Modifier" onClick={() => openEditFact(f)}
                                   style={{ background: "#eff6ff", border: "none", borderRadius: 7, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
                                   ✏️
-                                </button>
+                                </button>}
                               {/* Icône Aperçu */}
                                 <button title="Aperçu" onClick={() => setPreviewFact(f)}
                                   style={{ background: "#fef3c7", border: "none", borderRadius: 7, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
@@ -3330,10 +3813,10 @@ export default function App() {
                                   ⬇
                                 </button>
                                 {/* Supprimer */}
-                                <button title="Supprimer" onClick={() => { if (window.confirm("Supprimer cette facture ?")) setFactures(factures.filter((x) => x.id !== f.id)); }}
+                                {canWrite && <button title="Supprimer" onClick={() => { if (window.confirm("Supprimer cette facture ?")) setFactures(factures.filter((x) => x.id !== f.id)); }}
                                   style={{ background: "#fee2e2", border: "none", borderRadius: 7, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: "#991b1b", fontWeight: 900 }}>
                                   ✕
-                                </button>
+                                </button>}
                               </div>
                             </td>
                           ) : (
@@ -3359,8 +3842,8 @@ export default function App() {
                 <div style={{ color: "#6b7280", fontSize: 14, marginTop: 4 }}>{clients.length} client(s)</div>
               </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <button style={{ ...BTN_PRIMARY, background: "#1d4ed8" }} onClick={() => setImportModal("clients")}>📥 Importer Excel</button>
-                <button style={BTN_PRIMARY} onClick={() => { setCForm({ id: "", type: "", nom: "", ice: "", adresse: "", ville: "", tel: "", email: "" }); setClientModal("add"); }}>+ Ajouter Client</button>
+                {canWrite && <button style={{ ...BTN_PRIMARY, background: "#1d4ed8" }} onClick={() => setImportModal("clients")}>📥 Importer Excel</button>}
+                {canWrite && <button style={BTN_PRIMARY} onClick={() => { setCForm({ id: "", type: "", nom: "", ice: "", adresse: "", ville: "", tel: "", email: "" }); setClientModal("add"); }}>+ Ajouter Client</button>}
               </div>
             </div>
             <div style={CARD}>
@@ -3431,8 +3914,8 @@ export default function App() {
                         {[...visibleClientCols, "Actions"].map((col) => col === "Actions" ? (
                           <td key="actions" style={TD}>
                             <div style={{ display: "flex", gap: 6 }}>
-                              <SmallBtn label="Modifier" bg="#eff6ff" color="#1d4ed8" onClick={() => { setCForm({ ...c }); setClientModal("edit"); }} />
-                              <SmallBtn label="X" bg="#fee2e2" color="#991b1b" onClick={() => { if (window.confirm("Supprimer ?")) setClients(clients.filter((x) => x.id !== c.id)); }} />
+                              {canWrite && <SmallBtn label="Modifier" bg="#eff6ff" color="#1d4ed8" onClick={() => { setCForm({ ...c }); setClientModal("edit"); }} />}
+                              {canWrite && <SmallBtn label="X" bg="#fee2e2" color="#991b1b" onClick={() => { if (window.confirm("Supprimer ?")) setClients(clients.filter((x) => x.id !== c.id)); }} />}
                             </div>
                           </td>
                         ) : clientColMap[col])}
@@ -3455,8 +3938,8 @@ export default function App() {
                 <div style={{ color: "#6b7280", fontSize: 14, marginTop: 4 }}>{products.length} produit(s)</div>
               </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <button style={{ ...BTN_PRIMARY, background: "#1d4ed8" }} onClick={() => setImportModal("products")}>📥 Importer Excel</button>
-                <button style={BTN_PRIMARY} onClick={() => { setPForm({ id: "", description: "", prixHT: "", tva: 20, categorie: "" }); setPFormTTC(""); setProdModal("add"); }}>+ Ajouter Produit</button>
+                {canWrite && <button style={{ ...BTN_PRIMARY, background: "#1d4ed8" }} onClick={() => setImportModal("products")}>📥 Importer Excel</button>}
+                {canWrite && <button style={BTN_PRIMARY} onClick={() => { setPForm({ id: "", description: "", prixHT: "", tva: 20, categorie: "" }); setPFormTTC(""); setProdModal("add"); }}>+ Ajouter Produit</button>}
               </div>
             </div>
             <div style={CARD}>
@@ -3497,8 +3980,8 @@ export default function App() {
                         <td style={{ ...TD, fontWeight: 800, color: "#166534" }}>{fmt(p.prixHT * (1 + p.tva / 100))} DH</td>
                         <td style={TD}>
                           <div style={{ display: "flex", gap: 6 }}>
-                            <SmallBtn label="Modifier" bg="#eff6ff" color="#1d4ed8" onClick={() => { setPForm({ ...p, categorie: p.categorie || "" }); setPFormTTC(p.prixHT ? String(parseFloat((p.prixHT * (1 + p.tva / 100)).toFixed(2))) : ""); setProdModal("edit"); }} />
-                            <SmallBtn label="X" bg="#fee2e2" color="#991b1b" onClick={() => { if (window.confirm("Supprimer ?")) setProducts(products.filter((x) => x.id !== p.id)); }} />
+                            {canWrite && <SmallBtn label="Modifier" bg="#eff6ff" color="#1d4ed8" onClick={() => { setPForm({ ...p, categorie: p.categorie || "" }); setPFormTTC(p.prixHT ? String(parseFloat((p.prixHT * (1 + p.tva / 100)).toFixed(2))) : ""); setProdModal("edit"); }} />}
+                            {canWrite && <SmallBtn label="X" bg="#fee2e2" color="#991b1b" onClick={() => { if (window.confirm("Supprimer ?")) setProducts(products.filter((x) => x.id !== p.id)); }} />}
                           </div>
                         </td>
                       </tr>
@@ -3531,7 +4014,14 @@ export default function App() {
         )}
 
         {/* ═ SETTINGS ═ */}
-        {page === "settings" && (
+        {page === "settings" && !canWrite && (
+          <div style={{ textAlign: "center", padding: "80px 40px" }}>
+            <div style={{ fontSize: 64, marginBottom: 16 }}>🔒</div>
+            <h2 style={{ color: "#1a1a2e", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Accès restreint</h2>
+            <p style={{ color: "#6b7280", fontSize: 14 }}>La page Paramètres est réservée aux utilisateurs avec droits d'écriture.</p>
+          </div>
+        )}
+        {page === "settings" && canWrite && (
           <SettingsPage
             config={config}
             setConfig={setConfig}
