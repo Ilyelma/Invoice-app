@@ -2579,6 +2579,20 @@ function CalculPage({ products, onCreateFacture }) {
 export default function App() {
   const [page, setPage] = useState("factures");
 
+  // ── Firestore loading state ────────────────────────────────────────────────
+  const [firestoreReady, setFirestoreReady] = useState(
+    () => !!localStorage.getItem("zkm_fa4_all") || !!localStorage.getItem("zkm_profils")
+  );
+
+  useEffect(() => {
+    const unsub = onSnapshot(DATA_DOC, (snap) => {
+      if (snap.exists()) setFirestoreReady(true);
+    });
+    // Fallback : si Firestore ne répond pas en 4s, on affiche quand même l'app
+    const timer = setTimeout(() => setFirestoreReady(true), 4000);
+    return () => { unsub(); clearTimeout(timer); };
+  }, []);
+
   // ── Multi-profils ─────────────────────────────────────────────────────────
   const [profils, setProfils] = useStorage("zkm_profils", DEFAULT_PROFILS);
   const [profilActifId, setProfilActifId] = useStorage("zkm_profil_actif", "p1");
@@ -2969,6 +2983,62 @@ export default function App() {
     { id: "settings",   icon: "⚙️", label: "Parametres" },
     { id: "calcul",     icon: "🧮", label: "Calcul" },
   ];
+
+  // ── Écran de chargement Firestore ─────────────────────────────────────────
+  if (!firestoreReady) {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", height: "100vh", background: "#1a1a2e", gap: 24,
+      }}>
+        <style>{`
+          @keyframes zkm-slide {
+            0%   { transform: translateX(-100%); }
+            100% { transform: translateX(280%); }
+          }
+          @keyframes zkm-pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.5; }
+          }
+        `}</style>
+
+        {/* Logo / titre */}
+        <div style={{ textAlign: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>⚡</div>
+          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800, letterSpacing: 1 }}>
+            ZK MAROC
+          </div>
+          <div style={{ color: "#aaaacc", fontSize: 13, marginTop: 4, letterSpacing: 2, textTransform: "uppercase" }}>
+            Invoice Manager
+          </div>
+        </div>
+
+        {/* Message */}
+        <div style={{
+          color: "#ccccee", fontSize: 15, fontWeight: 500,
+          animation: "zkm-pulse 1.6s ease-in-out infinite",
+        }}>
+          Synchronisation en cours…
+        </div>
+
+        {/* Barre de progression animée */}
+        <div style={{
+          width: 240, height: 5, background: "#2a2a4a",
+          borderRadius: 3, overflow: "hidden", position: "relative",
+        }}>
+          <div style={{
+            width: "50%", height: "100%", background: "linear-gradient(90deg, transparent, #C8A84B, transparent)",
+            borderRadius: 3, position: "absolute", top: 0, left: 0,
+            animation: "zkm-slide 1.3s ease-in-out infinite",
+          }} />
+        </div>
+
+        <div style={{ color: "#555577", fontSize: 12, marginTop: 4 }}>
+          Connexion à la base de données Firebase…
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f5f4ef", minHeight: "100vh", display: "flex" }}>
