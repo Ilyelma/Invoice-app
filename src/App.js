@@ -3440,6 +3440,7 @@ export default function App() {
   };
 
   const openFromSimulator = (lignes) => {
+    if (!canWrite) return; // sécurité supplémentaire
     setFForm({ numero: nextFNum(), date: todayStr(), clientId: "", reglement: "virement", lignes });
     setCSearch(""); setPSearch(""); setSelProd(""); setProdQte(1); setShowCDD(false); setShowPDD(false);
     setEditingFact(null);
@@ -3463,6 +3464,7 @@ export default function App() {
   };
 
   const saveFact = () => {
+    if (!canWrite) { alert("Accès refusé : droits en lecture seule."); return; }
     if (!fForm.numero.trim()) { alert("Le numéro de facture est obligatoire"); return; }
     if (!fForm.clientId) { alert("Veuillez selectionner un client"); return; }
     if (!fForm.lignes.length) { alert("Ajoutez au moins un produit"); return; }
@@ -3512,8 +3514,8 @@ export default function App() {
     { id: "clients",     icon: "👥", label: "Clients" },
     { id: "products",    icon: "📦", label: "Produits" },
     { id: "declaration", icon: "📋", label: "Déclaration" },
-    { id: "settings",   icon: "⚙️", label: "Parametres" },
-    { id: "calcul",     icon: "🧮", label: "Calcul" },
+    ...(canWrite ? [{ id: "settings", icon: "⚙️", label: "Parametres" }] : []),
+    ...(canWrite ? [{ id: "calcul",   icon: "🧮", label: "Calcul" }] : []),
   ];
 
   // ── Écran de chargement Firestore ─────────────────────────────────────────
@@ -3675,7 +3677,7 @@ export default function App() {
                   <span style={{ background: (profilActif?.couleur || GOLD) + "20", color: profilActif?.couleur || GOLD, border: "1px solid " + (profilActif?.couleur || GOLD) + "40", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>{profilActif?.nom}</span>
                 </div>
               </div>
-              <button style={BTN_PRIMARY} onClick={openNewFact} disabled={!canWrite} title={!canWrite ? "Accès en lecture seule" : ""}>+ Nouvelle Facture</button>
+              {canWrite && <button style={BTN_PRIMARY} onClick={openNewFact}>+ Nouvelle Facture</button>}
             </div>
 
             {/* ── Cartes stats ── */}
@@ -4050,7 +4052,14 @@ export default function App() {
         )}
 
         {/* ═ CALCUL ═ */}
-        {page === "calcul" && (
+        {page === "calcul" && !canWrite && (
+          <div style={{ textAlign: "center", padding: "80px 40px" }}>
+            <div style={{ fontSize: 64, marginBottom: 16 }}>🔒</div>
+            <h2 style={{ color: "#1a1a2e", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Accès restreint</h2>
+            <p style={{ color: "#6b7280", fontSize: 14 }}>Le simulateur de calcul est réservé aux utilisateurs avec droits d'écriture.</p>
+          </div>
+        )}
+        {page === "calcul" && canWrite && (
           <CalculPage products={products} onCreateFacture={openFromSimulator} />
         )}
 
