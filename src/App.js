@@ -3102,27 +3102,6 @@ export default function App() {
   const canWrite = userRole === "admin" || userRole === "ecriture_lecture";
   const isAdmin  = userRole === "admin";
 
-  // ── Écran de chargement Auth ──────────────────────────────────────────────
-  if (!authReady) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#1a1a2e", gap: 24 }}>
-        <style>{`@keyframes zkm-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(280%); } }`}</style>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 8 }}>⚡</div>
-          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800 }}>ZK MAROC</div>
-        </div>
-        <div style={{ width: 240, height: 5, background: "#2a2a4a", borderRadius: 3, overflow: "hidden", position: "relative" }}>
-          <div style={{ width: "50%", height: "100%", background: "linear-gradient(90deg, transparent, #C8A84B, transparent)", borderRadius: 3, position: "absolute", animation: "zkm-slide 1.3s ease-in-out infinite" }} />
-        </div>
-      </div>
-    );
-  }
-
-  // ── Page de connexion si non connecté ─────────────────────────────────────
-  if (!authUser) {
-    return <LoginPage onLogin={handleLogin} error={loginError} loading={loginLoading} />;
-  }
-
   // ── Chargement Firestore : on attend la 1ère réponse avant d'afficher l'app ──
   // Si localStorage a déjà des données → pas besoin d'attendre
   const [firestoreReady, setFirestoreReady] = useState(
@@ -3555,6 +3534,26 @@ export default function App() {
         <div style={{ color: "#555577", fontSize: 12, marginTop: 4 }}>Connexion à la base de données Firebase…</div>
       </div>
     );
+  }
+
+  // ── Rendu conditionnel selon état auth (APRES tous les hooks) ───────────
+  if (!authReady) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#1a1a2e", gap: 24 }}>
+        <style>{`@keyframes zkm-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(280%); } }`}</style>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>⚡</div>
+          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800 }}>ZK MAROC</div>
+        </div>
+        <div style={{ width: 240, height: 5, background: "#2a2a4a", borderRadius: 3, overflow: "hidden", position: "relative" }}>
+          <div style={{ width: "50%", height: "100%", background: "linear-gradient(90deg, transparent, #C8A84B, transparent)", borderRadius: 3, position: "absolute", animation: "zkm-slide 1.3s ease-in-out infinite" }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return <LoginPage onLogin={handleLogin} error={loginError} loading={loginLoading} />;
   }
 
   return (
