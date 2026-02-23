@@ -157,37 +157,43 @@ const DEFAULT_PROFILS = [
   },
 ];
 
+// ── Source de vérité unique : Firestore ─────────────────────────────────────
+// localStorage = cache lecture rapide (évite l'écran blanc au démarrage)
+// Firestore    = seule source officielle, jamais écrasée au démarrage
+
 function useStorage(key, init) {
+  // Affichage immédiat via cache localStorage
   const [val, setVal] = useState(() => {
     try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : init; }
     catch { return init; }
   });
 
-  const fromFirestore = useRef(false);
-
-  // Écriture : localStorage + Firestore
-  useEffect(() => {
-    if (fromFirestore.current) { fromFirestore.current = false; return; }
-    try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
-    setDoc(DATA_DOC, { [key]: val }, { merge: true }).catch(() => {});
-  }, [key, val]);
-
-  // Lecture temps réel depuis Firestore (tous appareils)
+  // ── Écoute Firestore en temps réel (source de vérité) ──
   useEffect(() => {
     const unsub = onSnapshot(DATA_DOC, (snap) => {
       if (!snap.exists()) return;
       const incoming = snap.data()[key];
       if (incoming === undefined) return;
-      const local = localStorage.getItem(key);
-      if (JSON.stringify(incoming) === local) return;
-      fromFirestore.current = true;
+      // Met à jour état local ET cache localStorage
       setVal(incoming);
       try { localStorage.setItem(key, JSON.stringify(incoming)); } catch {}
     });
     return unsub;
-  }, [key]);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return [val, setVal];
+  // ── Setter : écrit DIRECTEMENT dans Firestore ──
+  const setValAndSync = useCallback((valOrFn) => {
+    setVal(prev => {
+      const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
+      // Source de vérité : Firestore
+      setDoc(DATA_DOC, { [key]: next }, { merge: true }).catch(() => {});
+      // Cache local pour la fluidité UI
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return [val, setValAndSync];
 }
 
 function numberToWords(n) {
@@ -2579,19 +2585,21 @@ function CalculPage({ products, onCreateFacture }) {
 export default function App() {
   const [page, setPage] = useState("factures");
 
-  // ── Firestore loading state ────────────────────────────────────────────────
+  // ── Chargement Firestore : on attend la 1ère réponse avant d'afficher l'app ──
+  // Si localStorage a déjà des données → pas besoin d'attendre
   const [firestoreReady, setFirestoreReady] = useState(
     () => !!localStorage.getItem("zkm_fa4_all") || !!localStorage.getItem("zkm_profils")
   );
 
   useEffect(() => {
+    if (firestoreReady) return; // déjà prêt via cache local
     const unsub = onSnapshot(DATA_DOC, (snap) => {
-      if (snap.exists()) setFirestoreReady(true);
+      setFirestoreReady(true); // Firestore a répondu → on affiche
     });
-    // Fallback : si Firestore ne répond pas en 4s, on affiche quand même l'app
-    const timer = setTimeout(() => setFirestoreReady(true), 4000);
+    // Fallback 5s : si Firestore ne répond pas, on affiche quand même
+    const timer = setTimeout(() => setFirestoreReady(true), 5000);
     return () => { unsub(); clearTimeout(timer); };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Multi-profils ─────────────────────────────────────────────────────────
   const [profils, setProfils] = useStorage("zkm_profils", DEFAULT_PROFILS);
