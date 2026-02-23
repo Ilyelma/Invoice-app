@@ -2656,7 +2656,7 @@ function LoginPage({ onLogin, error, loading }) {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 36 }}>
           <div style={{ fontSize: 44, marginBottom: 10 }}>⚡</div>
-          <div style={{ color: "#C8A84B", fontSize: 24, fontWeight: 800, letterSpacing: 1 }}>ZK MAROC</div>
+          <div style={{ color: "#C8A84B", fontSize: 24, fontWeight: 800, letterSpacing: 1 }}>Invoice ILY</div>
           <div style={{ color: "#8888bb", fontSize: 12, marginTop: 4, letterSpacing: 2, textTransform: "uppercase" }}>Invoice Manager</div>
         </div>
 
