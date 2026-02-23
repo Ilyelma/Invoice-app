@@ -2653,18 +2653,20 @@ export default function App() {
 
       try {
         const canvas = await html2canvas(el, {
-          scale: 2,
+          scale: 4,
           useCORS: true,
           allowTaint: true,
           backgroundColor: "#ffffff",
           width: 794,
           height: 1123,
           logging: false,
+          imageTimeout: 0,
+          removeContainer: true,
         });
 
-        const imgData = canvas.toDataURL("image/jpeg", 0.95);
-        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+        pdf.addImage(imgData, "PNG", 0, 0, 210, 297, "", "FAST");
 
         // Electron: sauvegarde directe via IPC (chemin complet persisté)
         const activeFolderPath = dlDirNames[profilActif?.id];
