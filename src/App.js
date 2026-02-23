@@ -4,8 +4,8 @@ import html2canvas from "html2canvas";
 import * as XLSX from "xlsx";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, deleteDoc } from "firebase/firestore";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "firebase/auth";
+import { initializeApp as initializeAppSecondary, getApps, deleteApp } from "firebase/app";
 
 // ── Firebase Config ───────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -19,7 +19,6 @@ const firebaseConfig = {
 const fbApp   = initializeApp(firebaseConfig);
 const db      = getFirestore(fbApp);
 const auth      = getAuth(fbApp);
-const fbFunctions = getFunctions(fbApp, "europe-west1"); // région la plus proche du Maroc
 const DATA_DOC  = doc(db, "zkm_data", "main");
 // Collection Firestore pour les utilisateurs de l'app
 const USERS_COL = collection(db, "zkm_users");
@@ -2758,26 +2757,23 @@ function LoginPage({ onLogin, error, loading }) {
 
 // Panel de gestion des utilisateurs (Admin uniquement)
 function UsersPanel({ currentUser, onClose }) {
-  const [users, setUsers]           = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [form, setForm]             = useState({ email: "", password: "", role: "lecture", nom: "" });
-  const [creating, setCreating]     = useState(false);
-  const [deleting, setDeleting]     = useState(null); // email en cours de suppression
+  const [users, setUsers]                 = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [form, setForm]                   = useState({ email: "", password: "", role: "lecture", nom: "" });
+  const [creating, setCreating]           = useState(false);
+  const [deleting, setDeleting]           = useState(null);
   const [createError, setCreateError]     = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
-  const [showForm, setShowForm]     = useState(false);
-
-  // Callable Functions
-  const fnCreate = httpsCallable(fbFunctions, "createAppUser");
-  const fnDelete = httpsCallable(fbFunctions, "deleteAppUser");
-  const fnUpdate = httpsCallable(fbFunctions, "updateAppUserRole");
+  const [showForm, setShowForm]           = useState(false);
+  const [showPwd, setShowPwd]             = useState(false);
 
   const ROLES = [
-    { id: "admin",            label: "Administrateur",      desc: "Accès total + gestion des utilisateurs",    color: "#991b1b", bg: "#fee2e2", icon: "👑" },
-    { id: "ecriture_lecture", label: "Écriture & Lecture",  desc: "Peut créer, modifier, supprimer",           color: "#1e40af", bg: "#eff6ff", icon: "✏️" },
-    { id: "lecture",          label: "Lecture seule",       desc: "Visualisation uniquement, sans modification", color: "#065f46", bg: "#d1fae5", icon: "👁️" },
+    { id: "admin",            label: "Administrateur",     desc: "Accès total + gestion des utilisateurs",     color: "#991b1b", bg: "#fee2e2", icon: "👑" },
+    { id: "ecriture_lecture", label: "Écriture & Lecture", desc: "Peut créer, modifier, supprimer",            color: "#1e40af", bg: "#eff6ff", icon: "✏️" },
+    { id: "lecture",          label: "Lecture seule",      desc: "Visualisation uniquement, sans modification", color: "#065f46", bg: "#d1fae5", icon: "👁️" },
   ];
 
+  // ── Charger les utilisateurs depuis Firestore ──────────────────────────
   const loadUsers = async () => {
     setLoading(true);
     try {
@@ -2792,58 +2788,80 @@ function UsersPanel({ currentUser, onClose }) {
 
   useEffect(() => { loadUsers(); }, []);
 
-  // ── Créer via Firebase Function ──────────────────────────────
+  // ── Créer compte Auth via instance secondaire (sans déconnecter l'admin) ──
   const createUser = async () => {
     setCreateError("");
     setCreateSuccess("");
-    if (!form.email.trim() || !form.password || form.password.length < 6) {
-      setCreateError("Email valide et mot de passe (6+ caractères) requis.");
-      return;
-    }
+
+    if (!form.email.trim()) { setCreateError("L'adresse e-mail est obligatoire."); return; }
+    if (!form.password || form.password.length < 6) { setCreateError("Le mot de passe doit contenir au moins 6 caractères."); return; }
+
     setCreating(true);
+    const emailLower = form.email.trim().toLowerCase();
+
+    // Instance Firebase secondaire temporaire — ne touche pas à la session admin
+    let secondaryApp = null;
     try {
-      const result = await fnCreate({
-        email:    form.email.trim().toLowerCase(),
-        password: form.password,
-        nom:      form.nom.trim() || form.email.split("@")[0],
-        role:     form.role,
+      // Créer une app Firebase temporaire avec un nom unique
+      const tempAppName = "zkm-temp-" + Date.now();
+      secondaryApp = initializeAppSecondary(firebaseConfig, tempAppName);
+      const secondaryAuth = getAuth(secondaryApp);
+
+      // Créer le compte dans Firebase Auth
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, emailLower, form.password);
+
+      // Sauvegarder la fiche dans Firestore (rôle + métadonnées)
+      const docId = btoa(emailLower).replace(/[^a-zA-Z0-9]/g, "_");
+      await setDoc(doc(db, "zkm_users", docId), {
+        email:     emailLower,
+        nom:       form.nom.trim() || emailLower.split("@")[0],
+        role:      form.role,
+        uid:       cred.user.uid,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser.email,
       });
-      setCreateSuccess("✅ " + result.data.message);
+
+      setCreateSuccess("✅ Utilisateur " + emailLower + " créé avec le rôle « " + ROLES.find(r => r.id === form.role)?.label + " ».");
       setForm({ email: "", password: "", role: "lecture", nom: "" });
       setShowForm(false);
       loadUsers();
+
     } catch (e) {
       const msgs = {
-        "already-exists":    "Un compte existe déjà avec cet e-mail.",
-        "permission-denied": "Accès refusé. Vous devez être administrateur.",
-        "invalid-argument":  e.message,
+        "auth/email-already-in-use": "Un compte existe déjà avec cet e-mail.",
+        "auth/invalid-email":        "Adresse e-mail invalide.",
+        "auth/weak-password":        "Mot de passe trop faible (minimum 6 caractères).",
       };
       setCreateError("⚠️ " + (msgs[e.code] || e.message));
+    } finally {
+      // Toujours supprimer l'app temporaire pour libérer les ressources
+      if (secondaryApp) {
+        try { await deleteApp(secondaryApp); } catch (_) {}
+      }
+      setCreating(false);
     }
-    setCreating(false);
   };
 
-  // ── Mettre à jour le rôle via Firebase Function ──────────────
-  const updateRole = async (userEmail, newRole) => {
+  // ── Mettre à jour le rôle dans Firestore ──────────────────────────────
+  const updateRole = async (userId, userEmail, newRole) => {
     try {
-      await fnUpdate({ email: userEmail, role: newRole });
-      setUsers(prev => prev.map(u => u.email === userEmail ? { ...u, role: newRole } : u));
+      await setDoc(doc(db, "zkm_users", userId), { role: newRole }, { merge: true });
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
     } catch (e) {
       alert("Erreur mise à jour du rôle : " + e.message);
     }
   };
 
-  // ── Supprimer via Firebase Function ─────────────────────────
-  const deleteUser = async (userEmail) => {
-    if (!window.confirm(`Supprimer l'accès de ${userEmail} ?\nCette action supprime aussi le compte de connexion.`)) return;
+  // ── Supprimer : fiche Firestore (le compte Auth reste, mais sans accès) ──
+  const deleteUser = async (userId, userEmail) => {
+    if (!window.confirm("Supprimer l'accès de " + userEmail + " ?\nL'utilisateur ne pourra plus se connecter.")) return;
     if (userEmail === currentUser.email) { alert("Vous ne pouvez pas supprimer votre propre compte."); return; }
     setDeleting(userEmail);
     try {
-      const result = await fnDelete({ email: userEmail });
-      setUsers(prev => prev.filter(u => u.email !== userEmail));
-      alert("✅ " + result.data.message);
+      await deleteDoc(doc(db, "zkm_users", userId));
+      setUsers(prev => prev.filter(u => u.id !== userId));
     } catch (e) {
-      alert("Erreur lors de la suppression : " + e.message);
+      alert("Erreur suppression : " + e.message);
     }
     setDeleting(null);
   };
@@ -2858,39 +2876,30 @@ function UsersPanel({ currentUser, onClose }) {
   };
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "#00000080", zIndex: 2000,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "\'Segoe UI\', system-ui, sans-serif",
-    }}>
-      <div style={{
-        background: "#fff", borderRadius: 20, width: "100%", maxWidth: 820,
-        maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column",
-        boxShadow: "0 24px 64px #00000050",
-      }}>
-        {/* Header */}
+    <div style={{ position: "fixed", inset: 0, background: "#00000080", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "\'Segoe UI\', system-ui, sans-serif" }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 820, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px #00000050" }}>
+
+        {/* ── Header ── */}
         <div style={{ padding: "24px 28px 20px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ background: "#fee2e280", borderRadius: 10, padding: "8px 10px", fontSize: 20 }}>👥</div>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#1a1a2e" }}>Gestion des utilisateurs</h2>
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Création, suppression et gestion des accès via Firebase</div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Création et gestion des accès — Plan Spark Firebase</div>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-            <button
-              onClick={() => { setShowForm(p => !p); setCreateError(""); setCreateSuccess(""); }}
+            <button onClick={() => { setShowForm(p => !p); setCreateError(""); setCreateSuccess(""); }}
               style={{ background: "#C8A84B", color: "#1a1a2e", border: "none", borderRadius: 10, padding: "9px 18px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
               {showForm ? "Annuler" : "+ Nouvel utilisateur"}
             </button>
             <button onClick={onClose}
-              style={{ background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 16px", cursor: "pointer", fontSize: 14 }}>
-              ✕
-            </button>
+              style={{ background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 16px", cursor: "pointer", fontSize: 14 }}>✕</button>
           </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
 
-          {/* Alerte succès persistante */}
+          {/* Message succès */}
           {createSuccess && (
             <div style={{ background: "#d1fae5", border: "1px solid #6ee7b7", borderRadius: 10, padding: "10px 16px", marginBottom: 16, color: "#065f46", fontSize: 13, fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               {createSuccess}
@@ -2898,11 +2907,10 @@ function UsersPanel({ currentUser, onClose }) {
             </div>
           )}
 
-          {/* Formulaire création */}
+          {/* ── Formulaire création ── */}
           {showForm && (
             <div style={{ background: "#fffbeb", border: "1.5px solid #fde68a", borderRadius: 14, padding: "20px 24px", marginBottom: 20 }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: "#92400e", marginBottom: 16 }}>➕ Créer un nouvel utilisateur</div>
-
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 5, textTransform: "uppercase" }}>Nom affiché</label>
@@ -2918,9 +2926,15 @@ function UsersPanel({ currentUser, onClose }) {
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 5, textTransform: "uppercase" }}>Mot de passe</label>
-                  <input value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                    type="password" placeholder="Minimum 6 caractères"
-                    style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #d1d5db", borderRadius: 9, fontSize: 13, boxSizing: "border-box", fontFamily: "inherit", outline: "none" }} />
+                  <div style={{ position: "relative" }}>
+                    <input value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                      type={showPwd ? "text" : "password"} placeholder="Minimum 6 caractères"
+                      style={{ width: "100%", padding: "10px 40px 10px 12px", border: "1.5px solid #d1d5db", borderRadius: 9, fontSize: 13, boxSizing: "border-box", fontFamily: "inherit", outline: "none" }} />
+                    <button type="button" onClick={() => setShowPwd(p => !p)}
+                      style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "#9ca3af" }}>
+                      {showPwd ? "🙈" : "👁️"}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 5, textTransform: "uppercase" }}>Rôle</label>
@@ -2931,7 +2945,7 @@ function UsersPanel({ currentUser, onClose }) {
                 </div>
               </div>
 
-              {/* Description du rôle sélectionné */}
+              {/* Description rôle */}
               {(() => { const r = ROLES.find(x => x.id === form.role); return r ? (
                 <div style={{ background: r.bg, border: "1px solid " + r.color + "30", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: r.color }}>
                   {r.icon} <b>{r.label}</b> — {r.desc}
@@ -2943,16 +2957,15 @@ function UsersPanel({ currentUser, onClose }) {
               )}
 
               <button onClick={createUser} disabled={creating}
-                style={{ background: "#1a1a2e", color: "#C8A84B", border: "none", borderRadius: 10, padding: "10px 22px", cursor: creating ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 13, opacity: creating ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8 }}>
-                {creating ? (
-                  <><span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid #C8A84B", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Création en cours...</>
-                ) : "✓ Créer l'utilisateur via Firebase"}
+                style={{ background: creating ? "#9ca3af" : "#1a1a2e", color: "#C8A84B", border: "none", borderRadius: 10, padding: "10px 22px", cursor: creating ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+                {creating
+                  ? <><span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid #C8A84B55", borderTopColor: "#C8A84B", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Création en cours...</>
+                  : "✓ Créer l'utilisateur"}
               </button>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
           )}
 
-          {/* Légende des 3 rôles */}
+          {/* ── Légende des rôles ── */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
             {ROLES.map(r => (
               <div key={r.id} style={{ background: r.bg, border: "1px solid " + r.color + "30", borderRadius: 12, padding: "12px 16px" }}>
@@ -2963,16 +2976,14 @@ function UsersPanel({ currentUser, onClose }) {
             ))}
           </div>
 
-          {/* Table utilisateurs */}
+          {/* ── Table utilisateurs ── */}
           {loading ? (
             <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
-              Chargement des utilisateurs...
+              <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>Chargement...
             </div>
           ) : users.length === 0 ? (
             <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>👤</div>
-              Aucun utilisateur créé pour l'instant.
+              <div style={{ fontSize: 40, marginBottom: 12 }}>👤</div>Aucun utilisateur pour l'instant.
             </div>
           ) : (
             <div style={{ border: "1px solid #f0f0f0", borderRadius: 14, overflow: "hidden" }}>
@@ -2996,9 +3007,7 @@ function UsersPanel({ currentUser, onClose }) {
                       <td style={{ padding: "12px 16px", color: "#6b7280", fontSize: 13 }}>{u.email}</td>
                       <td style={{ padding: "12px 16px" }}>
                         {u.email === currentUser.email ? getRoleBadge(u.role) : (
-                          <select
-                            value={u.role}
-                            onChange={e => updateRole(u.email, e.target.value)}
+                          <select value={u.role} onChange={e => updateRole(u.id, u.email, e.target.value)}
                             style={{ border: "1.5px solid #e5e7eb", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", outline: "none", background: "#fff" }}>
                             {ROLES.map(r => <option key={r.id} value={r.id}>{r.icon} {r.label}</option>)}
                           </select>
@@ -3009,11 +3018,9 @@ function UsersPanel({ currentUser, onClose }) {
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         {u.email !== currentUser.email && (
-                          <button
-                            onClick={() => deleteUser(u.email)}
-                            disabled={deleting === u.email}
-                            style={{ background: deleting === u.email ? "#f3f4f6" : "#fee2e2", color: deleting === u.email ? "#9ca3af" : "#991b1b", border: "none", borderRadius: 8, padding: "6px 12px", cursor: deleting === u.email ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                            {deleting === u.email ? "⏳ Suppression..." : "🗑️ Supprimer"}
+                          <button onClick={() => deleteUser(u.id, u.email)} disabled={deleting === u.email}
+                            style={{ background: deleting === u.email ? "#f3f4f6" : "#fee2e2", color: deleting === u.email ? "#9ca3af" : "#991b1b", border: "none", borderRadius: 8, padding: "6px 12px", cursor: deleting === u.email ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}>
+                            {deleting === u.email ? "⏳..." : "🗑️ Supprimer"}
                           </button>
                         )}
                       </td>
