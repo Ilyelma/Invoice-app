@@ -2,6 +2,35 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import * as XLSX from "xlsx";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+
+// ── Firebase Config ── À REMPLIR avec vos propres valeurs ────────────────────
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyBsEt-68wKQ_koKP_LY8-nWfTrbAR5f8O0",
+  authDomain: "inovoice-app-7eebd.firebaseapp.com",
+  projectId: "inovoice-app-7eebd",
+  storageBucket: "inovoice-app-7eebd.firebasestorage.app",
+  messagingSenderId: "198858609486",
+  appId: "1:198858609486:web:8135e19250cad7aa79c41f",
+  measurementId: "G-860QL36VJ7"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const fbApp = initializeApp(firebaseConfig);
+const db    = getFirestore(fbApp);
+const DATA_DOC = doc(db, "zkm_data", "main");
+// ─────────────────────────────────────────────────────────────────────────────
 
 
 // ── Embedded Logos ───────────────────────────────────────────────────────────
@@ -146,7 +175,31 @@ function useStorage(key, init) {
     try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : init; }
     catch { return init; }
   });
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }, [key, val]);
+
+  const fromFirestore = useRef(false);
+
+  // ── Écriture : localStorage + Firestore ──────────────────────────────────
+  useEffect(() => {
+    if (fromFirestore.current) { fromFirestore.current = false; return; }
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+    setDoc(DATA_DOC, { [key]: val }, { merge: true }).catch(() => {});
+  }, [key, val]);
+
+  // ── Lecture temps réel depuis Firestore (tous appareils) ─────────────────
+  useEffect(() => {
+    const unsub = onSnapshot(DATA_DOC, (snap) => {
+      if (!snap.exists()) return;
+      const incoming = snap.data()[key];
+      if (incoming === undefined) return;
+      const local = localStorage.getItem(key);
+      if (JSON.stringify(incoming) === local) return; // pas de changement
+      fromFirestore.current = true;
+      setVal(incoming);
+      try { localStorage.setItem(key, JSON.stringify(incoming)); } catch {}
+    });
+    return unsub;
+  }, [key]);
+
   return [val, setVal];
 }
 
