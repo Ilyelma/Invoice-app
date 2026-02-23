@@ -157,9 +157,28 @@ const DEFAULT_PROFILS = [
   },
 ];
 
-// ── Source de vérité unique : Firestore ─────────────────────────────────────
-// localStorage = cache lecture rapide (évite l'écran blanc au démarrage)
-// Firestore    = seule source officielle, jamais écrasée au démarrage
+// ── Deux hooks distincts ────────────────────────────────────────────────────
+// useStorage(key, init)      → synchronisé avec Firestore (données partagées)
+// useLocalStorage(key, init) → local uniquement (préférences par appareil)
+
+// Délai avant d'écrire dans Firestore (ms) - évite de spammer à chaque frappe
+const FIRESTORE_DEBOUNCE = 1500;
+
+// Hook LOCAL uniquement - jamais synchronisé entre appareils
+function useLocalStorage(key, init) {
+  const [val, setVal] = useState(() => {
+    try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : init; }
+    catch { return init; }
+  });
+  const setter = useCallback((valOrFn) => {
+    setVal(prev => {
+      const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return [val, setter];
+}
 
 function useStorage(key, init) {
   // Affichage immédiat via cache localStorage
@@ -168,27 +187,43 @@ function useStorage(key, init) {
     catch { return init; }
   });
 
+  const debounceTimer = useRef(null);
+  // Vrai si une écriture locale est en cours (ignore les mises à jour Firestore
+  // entrantes pendant ce temps pour éviter les conflits)
+  const localWritePending = useRef(false);
+
   // ── Écoute Firestore en temps réel (source de vérité) ──
   useEffect(() => {
     const unsub = onSnapshot(DATA_DOC, (snap) => {
       if (!snap.exists()) return;
       const incoming = snap.data()[key];
       if (incoming === undefined) return;
-      // Met à jour état local ET cache localStorage
+      // Si l'utilisateur est en train de taper → on ignore la mise à jour
+      // entrante pour ne pas écraser sa saisie
+      if (localWritePending.current) return;
       setVal(incoming);
       try { localStorage.setItem(key, JSON.stringify(incoming)); } catch {}
     });
     return unsub;
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Setter : écrit DIRECTEMENT dans Firestore ──
+  // ── Setter : met à jour l'UI immédiatement, écrit Firestore après délai ──
   const setValAndSync = useCallback((valOrFn) => {
     setVal(prev => {
       const next = typeof valOrFn === "function" ? valOrFn(prev) : valOrFn;
-      // Source de vérité : Firestore
-      setDoc(DATA_DOC, { [key]: next }, { merge: true }).catch(() => {});
-      // Cache local pour la fluidité UI
+
+      // 1. Mise à jour locale immédiate (UI fluide)
       try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+
+      // 2. Écriture Firestore différée (debounce)
+      localWritePending.current = true;
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(() => {
+        setDoc(DATA_DOC, { [key]: next }, { merge: true })
+          .catch(() => {})
+          .finally(() => { localWritePending.current = false; });
+      }, FIRESTORE_DEBOUNCE);
+
       return next;
     });
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2603,7 +2638,7 @@ export default function App() {
 
   // ── Multi-profils ─────────────────────────────────────────────────────────
   const [profils, setProfils] = useStorage("zkm_profils", DEFAULT_PROFILS);
-  const [profilActifId, setProfilActifId] = useStorage("zkm_profil_actif", "p1");
+  const [profilActifId, setProfilActifId] = useLocalStorage("zkm_profil_actif", "p1"); // local: chaque PC garde son propre profil actif
   const [showProfilMenu, setShowProfilMenu] = useState(false);
   const [editProfilModal, setEditProfilModal] = useState(null);
   const profilRef = useRef(null);
@@ -2656,14 +2691,14 @@ export default function App() {
   const factTags = allFactTags[profilActif?.id] || {};
   const setFactTags = (valOrFn) => setAllFactTags(prev => { const current = prev[profilActif.id] || {}; const next = typeof valOrFn === "function" ? valOrFn(current) : valOrFn; return { ...prev, [profilActif.id]: next }; });
   const [editingFact, setEditingFact] = useState(null); // id of facture being edited
-  const [clientsPerPage, setClientsPerPage] = useStorage("zkm_cPP", 10);
-  const [prodsPerPage, setProdsPerPage] = useStorage("zkm_pPP", 10);
+  const [clientsPerPage, setClientsPerPage] = useLocalStorage("zkm_cPP", 10); // local: préférence par appareil
+  const [prodsPerPage, setProdsPerPage] = useLocalStorage("zkm_pPP", 10); // local: préférence par appareil
   const [customRowTags, setCustomRowTags] = useStorage("zkm_rowTags", DEFAULT_ROW_TAGS);
   const [customCategories, setCustomCategories] = useStorage("zkm_cats", INITIAL_CATEGORIES);
   const allCategories = customCategories;
   // Client column visibility
   const ALL_CLIENT_COLS = ["ID", "Nom / Raison Sociale", "ICE", "Adresse", "Ville", "Telephone", "Email"];
-  const [visibleClientCols, setVisibleClientCols] = useStorage("zkm_clCols", ALL_CLIENT_COLS);
+  const [visibleClientCols, setVisibleClientCols] = useLocalStorage("zkm_clCols", ALL_CLIENT_COLS); // local: préférence par appareil
   const [showClientColMenu, setShowClientColMenu] = useState(false);
   const clientColMenuRef = useRef(null);
   useEffect(() => {
@@ -2674,14 +2709,14 @@ export default function App() {
   const [importModal, setImportModal] = useState(null);
   const [dlStatus, setDlStatus] = useState(null); // null | "generating" | "done" | "error"
   const [dlFact, setDlFact] = useState(null);     // facture en cours de capture PDF
-  const [dlDirNames, setDlDirNames] = useStorage("zkm_dldir_names", {});
+  const [dlDirNames, setDlDirNames] = useLocalStorage("zkm_dldir_names", {}); // local: chemin propre à chaque PC
   const dlDirHandle = dlDirNames[profilActif?.id] || "";
   const dirHandlesRef = useRef({});  // { profilId: FileSystemDirectoryHandle }
   const dlContainerRef = useRef(null);             // ref vers le div caché dans le DOM
 
   // ── Colonnes visibles ────────────────────────────────────────────────────────
   const ALL_COLS = ["N° Facture", "Client", "Date", "Total HT", "TVA", "Total TTC", "Reglement", "Statut", "Actions"];
-  const [visibleCols, setVisibleCols] = useStorage("zkm_cols", ["N° Facture", "Client", "Date", "Total HT", "TVA", "Total TTC", "Reglement", "Statut"]);
+  const [visibleCols, setVisibleCols] = useLocalStorage("zkm_cols", ["N° Facture", "Client", "Date", "Total HT", "TVA", "Total TTC", "Reglement", "Statut"]); // local: préférence par appareil
   const [showColMenu, setShowColMenu] = useState(false);
   const colMenuRef = useRef(null);
   useEffect(() => {
