@@ -3531,7 +3531,7 @@ export default function App() {
         `}</style>
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 48, marginBottom: 8 }}>⚡</div>
-          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800, letterSpacing: 1 }}>ZK MAROC</div>
+          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800, letterSpacing: 1 }}>Inovice ILY</div>
           <div style={{ color: "#aaaacc", fontSize: 13, marginTop: 4, letterSpacing: 2, textTransform: "uppercase" }}>Invoice Manager</div>
         </div>
         <div style={{ color: "#ccccee", fontSize: 15, fontWeight: 500, animation: "zkm-pulse 1.6s ease-in-out infinite" }}>
@@ -3552,7 +3552,7 @@ export default function App() {
         <style>{`@keyframes zkm-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(280%); } }`}</style>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 48, marginBottom: 8 }}>⚡</div>
-          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800 }}>ZK MAROC</div>
+          <div style={{ color: "#C8A84B", fontSize: 26, fontWeight: 800 }}>Invoice ILY</div>
         </div>
         <div style={{ width: 240, height: 5, background: "#2a2a4a", borderRadius: 3, overflow: "hidden", position: "relative" }}>
           <div style={{ width: "50%", height: "100%", background: "linear-gradient(90deg, transparent, #C8A84B, transparent)", borderRadius: 3, position: "absolute", animation: "zkm-slide 1.3s ease-in-out infinite" }} />
